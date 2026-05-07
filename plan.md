@@ -42,9 +42,10 @@ Orchestration Layer
 
 ## Team Split
 
-### 👤 Person A — Backend, Agents & AI Core
+### 👤 Person A & 👤 Person B — Both work on ALL topics
 
-### 👤 Person B — GitHub Integration, RAG & Local Setup
+Tasks are split **within each topic**, not between topics.
+Every milestone has both people working on agents, RAG, GitHub integration, Docker, and testing — so both learn the full stack equally.
 
 ---
 
@@ -69,109 +70,118 @@ Orchestration Layer
 
 #### Person A
 
-- [ ] **A1.1** — Initialize Python project repo with `pyproject.toml` / `requirements.txt`, folder structure (`app/`, `agents/`, `rag/`, `tests/`)
+- [ ] **A1.1** — Initialize Python project repo with `requirements.txt`, folder structure (`app/`, `agents/`, `rag/`, `tests/`)
 - [ ] **A1.2** — Set up FastAPI app skeleton with `/webhook` endpoint and health check `/ping`
-- [ ] **A1.3** — Configure environment variables (`.env.example`): Ollama base URL, GitHub secrets, Chroma DB path, model name
-- [ ] **A1.4** — Write ADR (Architecture Decision Record) in `docs/architecture.md` — finalize agent design
+- [ ] **A1.3** — Install Ollama locally, pull `llama3` and `nomic-embed-text` models, confirm they respond via `ollama run`
+- [ ] **A1.4** — Spike: write a 20-line LangChain `ChatOllama` hello-world script to verify the local LLM works end-to-end
 
 #### Person B
 
 - [ ] **B1.1** — Register GitHub App on GitHub (permissions: pull requests read/write, contents read), download private key
-- [ ] **B1.2** — Set up ngrok or smee.io for local webhook forwarding during development
-- [ ] **B1.3** — Create `github_client.py` — handle JWT auth, installation token generation, and basic API calls
-- [ ] **B1.4** — Install Ollama locally, pull `llama3` and `mistral` models, confirm they respond via `ollama run`
-- [ ] **B1.5** — Set up ChromaDB locally and confirm embeddings round-trip works using Ollama's embedding model (`nomic-embed-text`)
+- [ ] **B1.2** — Set up smee.io for local webhook forwarding, confirm a test ping reaches `localhost:8000`
+- [ ] **B1.3** — Configure environment variables (`.env.example`): Ollama URL, GitHub secrets, Chroma path, model name
+- [ ] **B1.4** — Spike: set up ChromaDB locally and confirm a dummy document embeds and retrieves correctly using `nomic-embed-text`
+- [ ] **B1.5** — Write ADR (Architecture Decision Record) in `docs/architecture.md` — document all tool/library choices with reasons
 
 ---
 
-### MILESTONE 2 — Core Agents & LLM Logic (Week 2–3)
+### MILESTONE 2 — Agents (Week 2–3)
 
-#### Person A
+> Both people build one agent each + write its tests, so both learn the agent + LangChain pattern.
 
-- [ ] **A2.1** — Configure LangChain `ChatOllama` LLM wrapper pointing to local Ollama server (`http://localhost:11434`), add model switcher utility
-- [ ] **A2.2** — Build **Orchestration Agent** (`agents/orchestrator.py`) — receives PR diff, routes to sub-agents, collects results
-- [ ] **A2.3** — Build **Code Analysis Agent** (`agents/code_analysis_agent.py`) — LangChain agent with tools:
+#### Person A — Orchestrator Agent
+
+- [ ] **A2.1** — Configure LangChain `ChatOllama` wrapper (`http://localhost:11434`), add a shared `llm_factory.py` utility both agents will use
+- [ ] **A2.2** — Build **Orchestration Agent** (`agents/orchestrator.py`) — receives parsed diff + RAG context, calls sub-agents in sequence, merges results
+- [ ] **A2.3** — Write unit tests for the orchestrator using `pytest` with mocked sub-agent calls (`tests/test_agents.py`)
+
+#### Person B — Code Analysis & Formatter Agents
+
+- [ ] **B2.1** — Build **Code Analysis Agent** (`agents/code_analysis_agent.py`) — LangChain agent with three tools:
   - `analyze_bugs` — detect logic errors and null pointer issues
   - `analyze_security` — flag hardcoded secrets, SQL injection, XSS
   - `analyze_quality` — check code smells, naming, complexity
-- [ ] **A2.4** — Build **Review Formatter Agent** (`agents/formatter_agent.py`) — converts raw agent output into structured GitHub review comments (file, line number, severity, suggestion)
-- [ ] **A2.5** — Write unit tests for each agent using `pytest` with mocked LLM responses (`tests/test_agents.py`)
-
-#### Person B
-
-- [ ] **B2.1** — Build **RAG pipeline** (`rag/indexer.py`) — chunk and embed repo files into ChromaDB using Ollama `nomic-embed-text` embeddings on first run
-- [ ] **B2.2** — Build **RAG retriever** (`rag/retriever.py`) — given a diff, retrieve relevant existing code context to give agents better understanding
-- [ ] **B2.3** — Integrate retriever output into the orchestrator context window
-- [ ] **B2.4** — Write tests for RAG pipeline — confirm correct chunks are retrieved for sample diffs
+- [ ] **B2.2** — Build **Review Formatter Agent** (`agents/formatter_agent.py`) — converts raw findings into structured GitHub review comment objects (file, line, severity, suggestion)
+- [ ] **B2.3** — Write unit tests for both agents with mocked LLM responses (`tests/test_agents.py`)
 
 ---
 
-### MILESTONE 3 — GitHub Integration (Week 2–3, parallel)
+### MILESTONE 3 — RAG + GitHub Integration (Week 2–3, parallel)
 
-#### Person A
+> Both people implement one half of RAG and one half of GitHub integration.
 
-- [ ] **A3.1** — Parse incoming GitHub `pull_request` webhook payload — extract repo, PR number, diff URL, commits
-- [ ] **A3.2** — Build `diff_parser.py` — parse unified diff into per-file, per-hunk, per-line structure for agent consumption
-- [ ] **A3.3** — Handle webhook signature verification (HMAC SHA-256) for security
+#### Person A — RAG Pipeline + Webhook Ingestion
 
-#### Person B
+- [ ] **A3.1** — Build **RAG Indexer** (`rag/indexer.py`) — chunk repo files with `RecursiveCharacterTextSplitter`, embed with `OllamaEmbeddings(nomic-embed-text)`, persist to ChromaDB
+- [ ] **A3.2** — Write tests for the indexer — index a temp folder of dummy files, assert collection exists in ChromaDB (`tests/test_rag.py`)
+- [ ] **A3.3** — Parse incoming GitHub `pull_request` webhook payload — extract repo, PR number, diff URL, commits
+- [ ] **A3.4** — Handle webhook signature verification (HMAC SHA-256) for security
 
-- [ ] **B3.1** — Build `comment_poster.py` — post inline review comments on specific lines using GitHub Review API
-- [ ] **B3.2** — Build PR status updater — set commit status (`pending` → `success`/`failure`) with summary message
-- [ ] **B3.3** — Handle GitHub App event filtering — only trigger on `opened`, `synchronize`, `reopened` PR events
-- [ ] **B3.4** — Test full webhook → comment flow end-to-end on a test repo
+#### Person B — RAG Retriever + GitHub Output
+
+- [ ] **B3.1** — Build **RAG Retriever** (`rag/retriever.py`) — given a diff query, retrieve top-k relevant chunks from ChromaDB; integrate retriever output into the orchestrator context window
+- [ ] **B3.2** — Write tests for the retriever — index dummy files, query with related text, assert correct chunk is returned (`tests/test_rag.py`)
+- [ ] **B3.3** — Build `diff_parser.py` — parse unified diff into per-file, per-hunk, per-line structure for agent consumption
+- [ ] **B3.4** — Build `comment_poster.py` — post inline review comments on specific lines using GitHub Review API
+- [ ] **B3.5** — Build `auth.py` — JWT generation + installation token exchange; build `status_updater.py` — set commit status (`pending` → `success`/`failure`)
 
 ---
 
 ### MILESTONE 4 — Integration & Testing (Week 4)
 
-#### Person A
+> Both people wire the pipeline together and both write tests, so both understand the full data flow.
 
-- [ ] **A4.1** — Wire full pipeline: webhook → diff parser → RAG context → orchestrator → formatter → comment poster
-- [ ] **A4.2** — Add retry logic and error handling (rate limits, LLM timeouts, GitHub API failures)
-- [ ] **A4.3** — Write integration tests using a sample PR diff fixture (`tests/test_integration.py`)
-- [ ] **A4.4** — Add logging (`structlog`) throughout the pipeline
+#### Person A — Pipeline Wiring + Integration Tests
 
-#### Person B
+- [ ] **A4.1** — Wire full pipeline: webhook → diff parser → RAG retriever → orchestrator → code analysis → formatter → comment poster
+- [ ] **A4.2** — Add retry logic and error handling (LLM timeouts, GitHub API rate limits, empty diffs)
+- [ ] **A4.3** — Write integration tests using a sample PR diff fixture — assert comments are produced and comment_poster is called (`tests/test_integration.py`)
+- [ ] **A4.4** — Add structured logging (`structlog`) throughout the pipeline
 
-- [ ] **B4.1** — Set up LangSmith tracing — instrument all LangChain agent calls for observability
-- [ ] **B4.2** — Build a simple eval set: 5 sample diffs with expected review comments, score LLM accuracy
-- [ ] **B4.3** — Tune prompts based on eval results — improve precision of security and bug detection
-- [ ] **B4.4** — Test on 3+ real open source PRs (small repos) and review quality of output
+#### Person B — Observability + Prompt Tuning + Real PR Testing
+
+- [ ] **B4.1** — Set up LangSmith free-tier tracing — instrument all LangChain agent calls so every run is visible in the LangSmith dashboard
+- [ ] **B4.2** — Handle GitHub App event filtering — only trigger pipeline on `opened`, `synchronize`, `reopened` PR events
+- [ ] **B4.3** — Build a simple eval set: 5 sample diffs with expected review comments; run them and score LLM output accuracy
+- [ ] **B4.4** — Tune prompts for all three agents based on eval results — improve precision of security and bug detection
+- [ ] **B4.5** — Test the full system end-to-end on 3+ real open source PRs (small repos) and document quality of output
 
 ---
 
-### MILESTONE 5 — Local Runner & Observability (Week 5)
+### MILESTONE 5 — Local Runner, Docker & Observability (Week 5)
 
-#### Person A
+> Both people work on the local dev experience and Docker — key DevOps skills for the resume.
 
-- [ ] **A5.1** — Build `local_runner.py` — a CLI script to manually trigger a review on any PR URL without needing a live webhook (useful for demos)
-- [ ] **A5.2** — Write `Dockerfile` for the FastAPI app and `docker-compose.yml` that wires up the FastAPI server + ChromaDB + Ollama container for a fully self-contained local dev environment
-- [ ] **A5.3** — Write a `setup.sh` / `setup.ps1` one-command setup script: builds Docker images, pulls Ollama models inside container, initialises ChromaDB
-- [ ] **A5.4** — Set up GitHub Actions CI pipeline (`.github/workflows/ci.yml`) — lint and test on push (no deployment step)
+#### Person A — Docker + CI
 
-#### Person B
+- [ ] **A5.1** — Write `Dockerfile` for the FastAPI app
+- [ ] **A5.2** — Write `docker-compose.yml` wiring FastAPI + ChromaDB + Ollama into a fully self-contained local dev environment
+- [ ] **A5.3** — Set up GitHub Actions CI pipeline (`.github/workflows/ci.yml`) — lint (`ruff`) and run tests on every push
 
-- [ ] **B5.1** — Set up LangSmith free-tier tracing — instrument all LangChain calls so every agent run is visible in the LangSmith dashboard
-- [ ] **B5.2** — Keep smee.io tunnel running persistently via a background script so GitHub webhooks reach localhost reliably
+#### Person B — Local Runner + Setup Script + Dashboard
+
+- [ ] **B5.1** — Build `local_runner.py` — CLI script to manually trigger a review on any PR URL without needing a live webhook (useful for demos)
+- [ ] **B5.2** — Write `setup.ps1` / `setup.sh` one-command setup script: builds Docker images, pulls Ollama models inside the container, initialises ChromaDB
 - [ ] **B5.3** — Build a simple local web dashboard (plain HTML + FastAPI route `/dashboard`) showing last 10 reviews, model used, and token counts
-- [ ] **B5.4** — Document hardware requirements in README (min RAM for running Llama 3 locally, tested on CPU vs GPU)
+- [ ] **B5.4** — Document hardware requirements in README (min RAM for Llama 3, tested on CPU vs GPU)
 
 ---
 
 ### MILESTONE 6 — Polish, Demo & Documentation (Week 6)
 
+> Both people contribute to documentation and demo materials — both should be able to explain the full project.
+
 #### Person A
 
 - [ ] **A6.1** — Record a 2–3 min demo video showing: PR opened → bot reviews → inline comments appear
-- [ ] **A6.2** — Write `README.md` — project overview, architecture diagram, setup instructions, screenshots
-- [ ] **A6.3** — Add a `CONTRIBUTING.md` and clean up code for public visibility
+- [ ] **A6.2** — Write `README.md` — project overview, quick start, architecture diagram, screenshots
+- [ ] **A6.3** — Add `CONTRIBUTING.md` and clean up all code for public visibility
 
 #### Person B
 
-- [ ] **B6.1** — Create architecture diagram (draw.io or Excalidraw) and add to README
-- [ ] **B6.2** — Write a short blog post / LinkedIn post explaining what you built and what you learned
-- [ ] **B6.3** — Provide a `demo_pr.py` script that creates a dummy PR on a test repo so interviewers can run the whole thing locally with one command
+- [ ] **B6.1** — Create architecture diagram (draw.io or Excalidraw) showing full data flow and add to README
+- [ ] **B6.2** — Write a short blog post / LinkedIn post explaining what both of you built and what you each learned
+- [ ] **B6.3** — Build `demo_pr.py` — script that creates a dummy PR on a test repo so interviewers can run the whole system locally with one command
 
 ---
 

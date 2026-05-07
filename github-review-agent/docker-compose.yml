@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - chroma_data:/app/chroma_db
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Pull models on first start — adjust model names as needed
+    # Run manually: docker exec <container> ollama pull llama3
+    # Run manually: docker exec <container> ollama pull nomic-embed-text
+
+volumes:
+  chroma_data:
+  ollama_data:

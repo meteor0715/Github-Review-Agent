@@ -1,0 +1,36 @@
+# Private keys and secrets — NEVER commit these
+secrets/
+*.pem
+*.key
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ChromaDB local database
+chroma_db/
+
+# Ollama model cache (if mounted locally)
+ollama_data/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

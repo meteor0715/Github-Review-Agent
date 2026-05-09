@@ -240,16 +240,129 @@ Open http://localhost:8000/ping in your browser — should return `{"status": "o
 
 ---
 
+## Testing — Milestone 3 (RAG + GitHub Integration + Diff Parser)
+
+### Run all unit tests (no Ollama or GitHub needed)
+
+```bash
+pytest tests/test_rag.py tests/test_github_client.py -v
+```
+
+All calls to ChromaDB, Ollama, and GitHub API are mocked — runs instantly.
+
+Expected: all tests pass with `PASSED` status.
+
+---
+
+### Manual diff parser test (no dependencies)
+
+```bash
+python3 - << 'EOF'
+from app.diff_parser import parse_diff
+
+sample = """\
+diff --git a/src/app.py b/src/app.py
+index abc..def 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,3 +1,5 @@
+ def connect():
++    password = "secret"
++    db.connect(password)
+     return True
+"""
+
+result = parse_diff(sample)
+print("Files parsed:", len(result))
+print("Filename:", result[0]["filename"])
+print("Added lines:", result[0]["added_lines"])
+print("Hunk line numbers:", [(l["type"], l["line_no"]) for l in result[0]["hunks"][0]["lines"]])
+EOF
+```
+
+Expected output:
+
+```
+Files parsed: 1
+Filename: src/app.py
+Added lines:     password = "secret"
+    db.connect(password)
+
+Hunk line numbers: [('context', 1), ('added', 2), ('added', 3), ('context', 4)]
+```
+
+---
+
+### Manual RAG indexer test (Ollama must be running)
+
+```bash
+python3 - << 'EOF'
+from rag.indexer import index_repository
+
+# Index this project itself as a test
+count = index_repository(".")
+print(f"✅ Indexed {count} chunks into ChromaDB")
+EOF
+```
+
+Then test retrieval:
+
+```bash
+python3 - << 'EOF'
+from rag.retriever import retrieve_context
+
+diff = "+password = 'secret'\n+db.connect(password)\n"
+context = retrieve_context(diff)
+if context:
+    print("✅ Retrieved context:")
+    print(context[:500])
+else:
+    print("⚠️  No context retrieved — did indexer run first?")
+EOF
+```
+
+---
+
+### Manual webhook signature test (no Ollama needed)
+
+```bash
+python3 - << 'EOF'
+import hmac, hashlib, os
+
+# Simulate what GitHub does when sending a webhook
+secret = "test_secret"
+payload = b'{"action": "opened"}'
+mac = hmac.new(secret.encode(), payload, hashlib.sha256)
+sig = "sha256=" + mac.hexdigest()
+
+# Now test our verification
+import sys
+sys.path.insert(0, ".")
+os.environ["GITHUB_WEBHOOK_SECRET"] = secret
+from app.webhook_handler import _verify_signature
+result = _verify_signature(payload, sig)
+print("✅ Signature valid:", result)
+
+# Test with wrong secret
+wrong = _verify_signature(payload, "sha256=fakehash")
+print("✅ Wrong signature rejected:", not wrong)
+EOF
+```
+
+---
+
 ## Troubleshooting
 
-| Problem                                 | Fix                                                                  |
-| --------------------------------------- | -------------------------------------------------------------------- |
-| `ollama: command not found`             | Run `brew install ollama` again or restart terminal                  |
-| `ModuleNotFoundError: langchain_ollama` | Run `pip install -r requirements.txt` in activated venv              |
-| `Connection refused` on port 11434      | Ollama server isn't running — run `ollama serve`                     |
-| pytest import errors                    | Make sure you're in the project root directory and venv is activated |
-| `chromadb` install fails                | Try `pip install chromadb --no-cache-dir`                            |
-| smee not receiving events               | Check webhook is set to "Active" in GitHub App settings              |
+| Problem                                 | Fix                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `ollama: command not found`             | Run `brew install ollama` again or restart terminal                                                                       |
+| `ModuleNotFoundError: langchain_ollama` | Run `pip install -r requirements.txt` in activated venv                                                                   |
+| `Connection refused` on port 11434      | Ollama server isn't running — run `ollama serve`                                                                          |
+| pytest import errors                    | Make sure you're in the project root directory and venv is activated                                                      |
+| `chromadb` install fails                | Try `pip install chromadb --no-cache-dir`                                                                                 |
+| smee not receiving events               | Check webhook is set to "Active" in GitHub App settings                                                                   |     | `FileNotFoundError: private-key.pem` | Download .pem from GitHub App settings → place at `secrets/private-key.pem` |
+| `ValueError: GITHUB_APP_ID`             | Fill in `GITHUB_APP_ID` in your `.env` file                                                                               |
+| ChromaDB `Collection not found`         | Run the indexer manually before retriever: `python3 -c "from rag.indexer import index_repository; index_repository('.')"` |
 
 ---
 

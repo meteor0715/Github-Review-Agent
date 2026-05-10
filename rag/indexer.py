@@ -37,7 +37,7 @@ Later, retriever.py does:
 import os
 from pathlib import Path
 from langchain_ollama import OllamaEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 import chromadb
 from dotenv import load_dotenv
 

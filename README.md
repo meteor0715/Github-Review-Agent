@@ -178,20 +178,6 @@ python local_runner.py --repo owner/repo --pr 42 --index-repo /path/to/code
 
 ---
 
-## Interviewer Demo
-
-One command creates a test PR with deliberate security and quality issues, then runs the full review pipeline on it:
-
-```bash
-python demo_pr.py --repo owner/AI-Review_Test --dry-run
-```
-
-Remove `--dry-run` to have the bot post real comments on the PR.
-
-See [`demo_pr.py`](demo_pr.py) for full usage.
-
----
-
 ## Running Tests
 
 ```bash

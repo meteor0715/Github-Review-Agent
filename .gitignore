@@ -1,5 +1,6 @@
 # Private keys and secrets — NEVER commit these
 secrets/
+Personal/
 *.pem
 *.key
 

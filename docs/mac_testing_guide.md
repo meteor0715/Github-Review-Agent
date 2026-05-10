@@ -351,6 +351,148 @@ EOF
 
 ---
 
+## Testing — Milestone 4 (Full Pipeline Integration)
+
+Milestone 4 wires every component together:
+`webhook → diff parser → RAG → orchestrator → GitHub comment poster + commit status`
+
+### Run integration tests (no Ollama or GitHub needed — all mocked)
+
+```bash
+pytest tests/test_integration.py -v
+```
+
+Expected output:
+
+```
+tests/test_integration.py::TestFullPipeline::test_pipeline_produces_comments_for_diff PASSED
+tests/test_integration.py::TestFullPipeline::test_pipeline_posts_comments_to_github PASSED
+tests/test_integration.py::TestFullPipeline::test_pipeline_handles_empty_diff_gracefully PASSED
+tests/test_integration.py::TestFullPipeline::test_clean_diff_produces_no_high_findings PASSED
+tests/test_integration.py::TestFullPipeline::test_commit_status_pending_then_success PASSED
+```
+
+### Run ALL tests together
+
+```bash
+pytest tests/ -v
+```
+
+This runs all 3 test files (agents, rag, github_client, integration) and should
+show 40+ passing tests.
+
+---
+
+### End-to-end live test (Ollama + GitHub App + smee required)
+
+This is the real thing. Make sure all 3 terminals are running:
+
+| Terminal | Command                                                               |
+| -------- | --------------------------------------------------------------------- |
+| 1        | `ollama serve`                                                        |
+| 2        | `smee --url https://smee.io/YOUR_CHANNEL --path /webhook --port 8000` |
+| 3        | `source .venv/bin/activate && uvicorn app.main:app --reload`          |
+
+Then on your test GitHub repo:
+
+1. Create a branch, add a Python file with a deliberate issue:
+
+```bash
+cat > test_security.py << 'EOF'
+import sqlite3
+
+def get_user(username):
+    conn = sqlite3.connect("users.db")
+    query = f"SELECT * FROM users WHERE name = '{username}'"
+    conn.execute(query)
+
+SECRET_KEY = "hardcoded_secret_12345"
+EOF
+
+git add test_security.py
+git commit -m "test: add file with deliberate security issues"
+git push origin your-branch
+```
+
+2. Open a Pull Request on GitHub from `your-branch` → `main`
+
+3. Watch Terminal 3 (uvicorn) for the pipeline logs:
+
+```
+[info] webhook.pr.received repo=you/repo pr=1 action=opened
+[info] pipeline.status.pending repo=you/repo pr=1
+[info] pipeline.diff.parsed files=1
+[info] pipeline.rag.done context_chars=0
+[info] orchestrator.start files_in_diff=1
+[info] orchestrator.analysis.done total_findings=2
+[info] orchestrator.formatting.done total_comments=2
+[info] pipeline.review.posted repo=you/repo pr=1
+[info] pipeline.status.final state=failure repo=you/repo pr=1
+```
+
+4. Open the PR on GitHub — you should see:
+   - ❌ `ai-review-agent` status badge (failure, because HIGH issues found)
+   - Inline comments on the specific lines with the hardcoded secret and SQL injection
+
+---
+
+### Manually trigger via local_runner.py (no live webhook needed)
+
+Once you have the `.env` filled in and Ollama running, you can test any PR:
+
+```bash
+python local_runner.py --repo owner/repo --pr 1
+```
+
+This fetches the PR diff via GitHub API and runs the full pipeline without
+needing smee.io or a webhook event.
+
+---
+
+### Verify retry logic works
+
+Test the exponential back-off by temporarily pointing to a bad URL:
+
+```bash
+python3 - << 'EOF'
+import os
+os.environ["GITHUB_APP_ID"] = "test"
+
+from app.webhook_handler import _fetch_with_retry
+import httpx
+
+try:
+    _fetch_with_retry("http://localhost:9999/nonexistent", "fake-token", retries=1)
+except Exception as e:
+    print(f"✅ Retry exhausted as expected: {type(e).__name__}")
+EOF
+```
+
+Expected: `✅ Retry exhausted as expected: ConnectError`
+
+---
+
+### Verify commit status lifecycle
+
+```bash
+python3 - << 'EOF'
+# Dry run — inspect the request without a real token
+from unittest.mock import patch, MagicMock
+
+with patch("github_client.status_updater.httpx.post") as mock_post:
+    mock_post.return_value = MagicMock(status_code=201, json=lambda: {})
+    from github_client.status_updater import set_commit_status
+    set_commit_status("fake", "owner/repo", "abc123", "pending", "AI Review starting…")
+    set_commit_status("fake", "owner/repo", "abc123", "success", "AI Review complete — 0 HIGH issues")
+    print(f"✅ set_commit_status called {mock_post.call_count} times")
+    for call in mock_post.call_args_list:
+        print("  State:", call.kwargs["json"]["state"],
+              "| Description:", call.kwargs["json"]["description"])
+EOF
+```
+
+---
+
 ## Troubleshooting
 
 | Problem                                 | Fix                                                                                                                       |

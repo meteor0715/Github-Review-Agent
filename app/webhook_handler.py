@@ -35,16 +35,28 @@ hmac.compare_digest() always takes the same time regardless of where mismatch is
 
 import hashlib
 import hmac
+import json
 import os
+import time
 import structlog
 from fastapi import APIRouter, Request, HTTPException
 from dotenv import load_dotenv
 
 from app.diff_parser import parse_diff
+from rag.retriever import retrieve_context
+from agents.orchestrator import run_orchestrator
+from github_client.auth import generate_jwt, get_installation_token
+from github_client.comment_poster import post_review_comments
+from github_client.status_updater import set_commit_status
 
 load_dotenv()
 log = structlog.get_logger()
 router = APIRouter()
+
+# How many times to retry when the LLM or GitHub API returns an error
+MAX_RETRIES = 2
+# Seconds to wait between retries (doubles each time — exponential back-off)
+RETRY_BACKOFF = 2
 
 # PR events that should trigger a review
 TRIGGER_EVENTS = {"opened", "synchronize", "reopened"}
@@ -153,7 +165,6 @@ async def webhook(request: Request):
         return {"status": "ignored", "reason": f"event type '{event_type}' not handled"}
 
     # Step 4: Parse payload
-    import json
     payload = json.loads(payload_bytes)
     pr_data = parse_pr_payload(payload)
 
@@ -167,13 +178,135 @@ async def webhook(request: Request):
         action=pr_data["action"],
     )
 
-    # Step 5: Trigger pipeline (wired fully in Milestone 4)
-    # For now we return the extracted PR data so you can verify parsing works
-    # TODO: M4 — call run_orchestrator and post comments
-    return {
-        "status": "accepted",
-        "pr": pr_data["pr_number"],
-        "repo": pr_data["repo_full_name"],
-        "action": pr_data["action"],
+    # ── Step 5: Run the full review pipeline ─────────────────────────────────
+    # We run this asynchronously from the webhook handler's perspective —
+    # we return 202 Accepted immediately and do the heavy work here.
+    # In production you'd push to a task queue (Celery, ARQ).  For local dev
+    # the synchronous call is fine because smee.io doesn't time out.
+
+    repo    = pr_data["repo_full_name"]
+    pr_num  = pr_data["pr_number"]
+    sha     = pr_data["head_sha"]
+    inst_id = pr_data["installation_id"]
+
+    # 5a: Get a GitHub installation token so we can call the API
+    try:
+        jwt_token = generate_jwt()
+        token     = get_installation_token(inst_id, jwt_token)
+    except Exception as exc:
+        log.error("pipeline.auth.failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="GitHub auth failed")
+
+    # 5b: Signal to GitHub that the review is starting
+    set_commit_status(token, repo, sha, "pending",
+                      description="AI Review in progress…")
+    log.info("pipeline.status.pending", repo=repo, pr=pr_num)
+
+    try:
+        # 5c: Fetch the raw diff from GitHub
+        import httpx
+        diff_url = pr_data["diff_url"]
+        diff_response = _fetch_with_retry(diff_url, token)
+        raw_diff = diff_response.text
+
+        # 5d: Parse the diff into structured per-file data
+        parsed_diff = parse_diff(raw_diff)
+        log.info("pipeline.diff.parsed", files=len(parsed_diff))
+
+        # 5e: Retrieve relevant codebase context via RAG
+        try:
+            rag_context = retrieve_context(raw_diff)
+            log.info("pipeline.rag.done",
+                     context_chars=len(rag_context) if rag_context else 0)
+        except Exception as exc:
+            # RAG failure is non-fatal — we continue without context
+            log.warning("pipeline.rag.failed", error=str(exc))
+            rag_context = ""
+
+        # 5f: Run the orchestrator (analysis → format → summary)
+        result = run_orchestrator(parsed_diff, rag_context)
+        summary  = result["summary"]
+        comments = result["comments"]
+        log.info("pipeline.orchestrator.done",
+                 comments=len(comments), summary_chars=len(summary))
+
+        # 5g: Post the review to GitHub
+        if comments or summary:
+            post_review_comments(token, repo, pr_num, comments, summary, sha)
+            log.info("pipeline.review.posted", repo=repo, pr=pr_num)
+
+        # 5h: Set final commit status
+        high_count = sum(
+            1 for c in comments
+            if "🔴" in c.get("body", "") or "[HIGH]" in c.get("body", "")
+        )
+        if high_count > 0:
+            desc  = f"AI Review complete — {high_count} HIGH issue(s) found"
+            state = "failure"
+        else:
+            desc  = f"AI Review complete — {len(comments)} finding(s), 0 HIGH"
+            state = "success"
+
+        set_commit_status(token, repo, sha, state, description=desc)
+        log.info("pipeline.status.final", state=state, repo=repo, pr=pr_num)
+
+        return {
+            "status": "accepted",
+            "pr": pr_num,
+            "repo": repo,
+            "action": pr_data["action"],
+            "comments_posted": len(comments),
+            "review_state": state,
+        }
+
+    except Exception as exc:
+        log.error("pipeline.failed", error=str(exc), repo=repo, pr=pr_num)
+        set_commit_status(token, repo, sha, "error",
+                          description="AI Review failed — check server logs")
+        raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}")
+
+
+def _fetch_with_retry(url: str, token: str, retries: int = MAX_RETRIES) -> "httpx.Response":
+    """
+    Fetch a URL with exponential back-off retry logic.
+
+    Why retry?
+    ----------
+    - GitHub API occasionally returns 5xx transient errors
+    - Network blips can cause connection errors
+    - Ollama can time out under load
+
+    Exponential back-off: wait 2s, then 4s, then give up.
+    This prevents hammering a struggling service.
+
+    Args:
+        url:     The URL to GET (e.g. PR diff URL from GitHub)
+        token:   GitHub installation token for Authorization header
+        retries: Number of retries remaining
+
+    Returns:
+        httpx.Response on success
+
+    Raises:
+        httpx.HTTPStatusError: if all retries are exhausted
+    """
+    import httpx
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3.diff",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
+    for attempt in range(retries + 1):
+        try:
+            response = httpx.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            if attempt == retries:
+                log.error("fetch.failed_all_retries", url=url, error=str(exc))
+                raise
+            wait = RETRY_BACKOFF ** attempt
+            log.warning("fetch.retrying", attempt=attempt + 1,
+                        wait_seconds=wait, error=str(exc))
+            time.sleep(wait)
 

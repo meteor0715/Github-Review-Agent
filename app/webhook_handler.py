@@ -305,7 +305,7 @@ def _fetch_with_retry(url: str, token: str, retries: int = MAX_RETRIES) -> "http
     }
     for attempt in range(retries + 1):
         try:
-            response = httpx.get(url, headers=headers, timeout=30)
+            response = httpx.get(url, headers=headers, timeout=30, follow_redirects=True)
             response.raise_for_status()
             return response
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:

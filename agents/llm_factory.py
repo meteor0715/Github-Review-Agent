@@ -40,7 +40,7 @@ def get_llm(temperature: float = 0.2) -> ChatOllama:
         ChatOllama instance ready for use in LangChain chains and agents.
     """
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = os.getenv("OLLAMA_MODEL", "llama3")
+    model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
     return ChatOllama(
         model=model,

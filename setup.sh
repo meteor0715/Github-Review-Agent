@@ -88,12 +88,12 @@ if command -v ollama &>/dev/null; then
     echo "🤖 Pulling Ollama models (this may take a few minutes on first run)..."
     # Check if ollama is running
     if curl -s http://localhost:11434/api/tags &>/dev/null; then
-        ollama pull llama3 && ok "llama3 ready"
+        ollama pull llama3.1:8b && ok "llama3.1:8b ready"
         ollama pull nomic-embed-text && ok "nomic-embed-text ready"
     else
         warn "Ollama server not running. Start it with: ollama serve"
         warn "Then pull models manually:"
-        warn "  ollama pull llama3"
+        warn "  ollama pull llama3.1:8b"
         warn "  ollama pull nomic-embed-text"
     fi
 fi

@@ -72,7 +72,7 @@ Write-Host ""
 Warn "Ollama must be started manually on Windows:"
 Warn "  1. Download from https://ollama.com/download"
 Warn "  2. Run: ollama serve"
-Warn "  3. In another terminal: ollama pull llama3"
+Warn "  3. In another terminal: ollama pull llama3.1:8b"
 Warn "  4. In another terminal: ollama pull nomic-embed-text"
 
 # ── Step 7: Docker compose ────────────────────────────────────────────────────

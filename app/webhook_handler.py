@@ -254,7 +254,7 @@ async def webhook(request: Request):
         # Record result in dashboard store
         record_review(
             repo=repo, pr=pr_num, comments=len(comments), state=state,
-            model=os.getenv("OLLAMA_MODEL", "llama3"),
+            model=os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
         )
 
         return {

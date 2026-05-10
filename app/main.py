@@ -34,7 +34,7 @@ async def dashboard():
     In production you'd use templates (Jinja2) or a proper frontend.
     """
     import os
-    model = os.getenv("OLLAMA_MODEL", "llama3")
+    model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
     embed_model = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
     _recent_reviews = get_recent_reviews()
 

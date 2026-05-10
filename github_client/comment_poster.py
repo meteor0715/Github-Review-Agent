@@ -80,6 +80,27 @@ def post_review_comments(
     }
 
     response = httpx.post(url, json=body, headers=headers)
+
+    if response.status_code == 422 and comments:
+        # GitHub returns 422 when inline comment line numbers don't exist in the diff.
+        # This happens when the LLM generates a line number that wasn't part of the
+        # actual changed lines. Fallback: post as a body-only review (no inline comments)
+        # by appending all findings to the summary body.
+        fallback_body = summary or ""
+        if fallback_body:
+            fallback_body += "\n\n---\n\n"
+        fallback_body += "**Inline Comments** (line anchoring unavailable for this diff):\n\n"
+        for c in comments:
+            fallback_body += f"- **{c['path']}**: {c['body']}\n\n"
+
+        fallback_payload = {
+            "commit_id": commit_sha,
+            "body": fallback_body,
+            "event": "COMMENT",
+            "comments": [],  # no inline comments — avoids 422
+        }
+        response = httpx.post(url, json=fallback_payload, headers=headers)
+
     response.raise_for_status()
     return response.json()
 

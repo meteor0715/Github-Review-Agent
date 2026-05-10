@@ -493,6 +493,134 @@ EOF
 
 ---
 
+## Testing — Milestone 5 (Docker, Local Runner & Dashboard)
+
+### One-command setup (first time on a new machine)
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+Expected output:
+
+```
+✅ Python found: 3.11.x
+✅ Ollama found
+✅ Docker found
+✅ Virtual environment created
+✅ Dependencies installed
+✅ Docker services started
+```
+
+---
+
+### Start Docker services (FastAPI + ChromaDB)
+
+```bash
+docker compose up --build -d
+```
+
+Verify both containers are healthy:
+
+```bash
+docker compose ps
+# Expected:
+# NAME                  STATUS                   PORTS
+# ai-review-agent       Up (healthy)             0.0.0.0:8000->8000/tcp
+# ai-review-chroma      Up (healthy)             0.0.0.0:8001->8000/tcp
+```
+
+Verify the app responds:
+
+```bash
+curl http://localhost:8000/ping
+# Expected: {"status":"ok"}
+```
+
+---
+
+### View the dashboard
+
+Open in browser: **http://localhost:8000/dashboard**
+
+Or check JSON:
+
+```bash
+curl http://localhost:8000/reviews
+# Expected: {"reviews": []}  (empty until a real PR review runs)
+```
+
+After running a review (via local_runner or live webhook), the dashboard shows:
+
+- Timestamp, repo, PR number, comment count, status badge, model name
+- Auto-refreshes every 30 seconds
+
+---
+
+### Run local_runner.py — review any PR without a live webhook
+
+Make sure Ollama is running and `.env` is filled in:
+
+```bash
+# Using --repo and --pr flags:
+python local_runner.py --repo owner/yourrepo --pr 1
+
+# Using a full URL:
+python local_runner.py --url https://github.com/owner/repo/pull/42
+
+# Dry run — print findings without posting to GitHub:
+python local_runner.py --repo owner/repo --pr 1 --dry-run
+
+# Index a local codebase first for better RAG context:
+python local_runner.py --repo owner/repo --pr 1 --index-repo /path/to/codebase
+```
+
+Expected output:
+
+```
+============================================================
+AI Review — owner/repo PR #1
+============================================================
+
+📋 SUMMARY
+Found 2 issues: 1 HIGH (hardcoded password), 1 LOW (missing docstring).
+
+💬 INLINE COMMENTS (2 total)
+
+  [1] src/auth.py line 5
+      🔴 [HIGH] [security] Hardcoded password detected...
+
+  [2] src/utils.py line 12
+      🟡 [LOW] [quality] Function has no docstring...
+
+============================================================
+```
+
+---
+
+### View Docker logs
+
+```bash
+# Follow all logs from the FastAPI container:
+docker compose logs -f app
+
+# ChromaDB logs:
+docker compose logs -f chroma
+
+# All services:
+docker compose logs -f
+```
+
+### Stop and clean up
+
+```bash
+docker compose down          # stop containers, keep volumes (ChromaDB data)
+docker compose down -v       # stop AND delete volumes (wipes ChromaDB index)
+```
+
+---
+
 ## Troubleshooting
 
 | Problem                                 | Fix                                                                                                                       |

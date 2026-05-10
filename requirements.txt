@@ -4,6 +4,7 @@ python-dotenv>=1.0.0
 langchain>=0.2.0
 langchain-community>=0.2.0
 langchain-ollama>=0.1.0
+langchain-text-splitters>=0.2.0
 chromadb>=0.5.0
 PyGithub>=2.3.0
 PyJWT>=2.8.0

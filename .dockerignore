@@ -1,0 +1,57 @@
+# .dockerignore — files excluded from the Docker build context
+#
+# Docker sends the entire build context (this folder) to the Docker daemon
+# when building an image. Large or sensitive files slow the build and bloat
+# the image. This file works like .gitignore but for Docker.
+
+# Python virtual environments — never needed inside the image
+# (the image installs its own packages from requirements.txt)
+.venv/
+venv/
+myenv/
+env/
+
+# Python bytecode — auto-generated, not needed
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Git history — not needed in the image
+.git/
+.gitignore
+
+# Private key and secrets — NEVER go in a Docker image
+# Mount these as volumes at runtime instead
+secrets/
+*.pem
+
+# Test files and coverage — not needed in production image
+tests/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Local ChromaDB data — mounted as a named volume at runtime
+chroma_db/
+
+# Local development config
+.env
+.env.*
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker files themselves (no need to copy into image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation (not needed in runtime image)
+docs/
+*.md

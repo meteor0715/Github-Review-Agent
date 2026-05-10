@@ -43,6 +43,7 @@ from fastapi import APIRouter, Request, HTTPException
 from dotenv import load_dotenv
 
 from app.diff_parser import parse_diff
+from app.review_store import record_review
 from rag.retriever import retrieve_context
 from agents.orchestrator import run_orchestrator
 from github_client.auth import generate_jwt, get_installation_token
@@ -249,6 +250,12 @@ async def webhook(request: Request):
 
         set_commit_status(token, repo, sha, state, description=desc)
         log.info("pipeline.status.final", state=state, repo=repo, pr=pr_num)
+
+        # Record result in dashboard store
+        record_review(
+            repo=repo, pr=pr_num, comments=len(comments), state=state,
+            model=os.getenv("OLLAMA_MODEL", "llama3"),
+        )
 
         return {
             "status": "accepted",

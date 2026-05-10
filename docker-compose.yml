@@ -1,28 +1,73 @@
+# docker-compose.yml — local development environment
+#
+# Services:
+#   app     — FastAPI webhook server (our code)
+#   chroma  — ChromaDB vector database (separate container, data persisted to named volume)
+#
+# Note: Ollama is NOT in this compose file.
+# Ollama runs natively on the Mac (GPU-accelerated) and is accessed via
+# OLLAMA_BASE_URL=http://host.docker.internal:11434 from inside the container.
+# Running Ollama inside Docker would lose GPU access and be much slower.
+
 version: "3.9"
 
 services:
+  # ── FastAPI application ───────────────────────────────────────────────────
   app:
     build: .
+    container_name: ai-review-agent
     ports:
-      - "8000:8000"
+      - "8000:8000" # host:container — access at http://localhost:8000
     env_file:
-      - .env
+      - .env # loads GITHUB_APP_ID, WEBHOOK_SECRET, OLLAMA_BASE_URL etc.
+    environment:
+      # Override ChromaDB path to point at the named volume inside the container
+      CHROMA_DB_PATH: /app/chroma_db
+      # Access host-machine Ollama from inside the container
+      # host.docker.internal resolves to the Docker host's IP on Mac/Windows
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
     volumes:
-      - .:/app
-      - chroma_data:/app/chroma_db
+      - .:/app # mount source code for live reload during dev
+      - chroma_data:/app/chroma_db # persist ChromaDB across container restarts
+      - ./secrets:/app/secrets:ro # mount secrets folder as read-only
     depends_on:
-      - ollama
+      chroma:
+        condition: service_healthy # wait for ChromaDB to be ready before starting
+    restart: unless-stopped
+    # Health check: confirm FastAPI is responding
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; httpx.get('http://localhost:8000/ping').raise_for_status()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
-  ollama:
-    image: ollama/ollama:latest
+  # ── ChromaDB vector database ──────────────────────────────────────────────
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: ai-review-chroma
     ports:
-      - "11434:11434"
+      - "8001:8000" # ChromaDB API at http://localhost:8001 (host) / :8000 (container)
     volumes:
-      - ollama_data:/root/.ollama
-    # Pull models on first start — adjust model names as needed
-    # Run manually: docker exec <container> ollama pull llama3
-    # Run manually: docker exec <container> ollama pull nomic-embed-text
+      - chroma_data:/chroma/chroma # persist vector data across restarts
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
+# Named volumes — Docker manages storage, data survives container restarts.
+# To reset (e.g. wipe ChromaDB and re-index): docker-compose down -v
 volumes:
   chroma_data:
-  ollama_data:
